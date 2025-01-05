@@ -63,24 +63,7 @@ fn main() {
             print!("{}{}m", fg_ansi_str, fg_color);
             print!("{}{}m", bg_ansi_str, bg_color);
 
-            for pixel in row.iter() {
-                if *pixel == 0 {
-                    print!(" ");
-                } else {
-                    print!("█");
-                }
-            }
-
-            let mut reverse_row = row.clone();
-            reverse_row.reverse();
-
-            for pixel in reverse_row.iter() {
-                if *pixel == 0 {
-                    print!(" ");
-                } else {
-                    print!("█");
-                }
-            }
+            print_row(row);
 
             println!("{}", ansi_reset);
 
@@ -94,5 +77,24 @@ fn main() {
         fg_color = i;
         bg_color = j;
         thread::sleep(time::Duration::from_millis(1));
+    }
+}
+
+fn mirror_row(row: &Vec<u8>) -> Vec<u8> {
+    let mut reversed_row = row.clone();
+    reversed_row.reverse();
+    reversed_row
+}
+
+fn print_row(row: &Vec<u8>) {
+    let reversed_row: Vec<u8> = mirror_row(row);
+    let joined_row: Vec<u8> = row.iter().chain(reversed_row.iter()).copied().collect();
+    let joined_row = joined_row.iter().chain(joined_row.iter());
+    for pixel in joined_row {
+        if *pixel == 0 {
+            print!(" ");
+        } else {
+            print!("█");
+        }
     }
 }

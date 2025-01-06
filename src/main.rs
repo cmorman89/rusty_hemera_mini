@@ -102,10 +102,19 @@ fn process_frame(frame: &Frame) -> Array3<u8> {
 }
 
 fn main() {
-    let image_path = "/home/charles/projects/rust-practice/rusty_hemera_mini/src/parrot.png"; // Replace with your image file path
+    // let image_path = "/home/charles/projects/rust-practice/rusty_hemera_mini/src/parrot.png";
+    // let rgb_array = image_to_rgb_array(image_path);
+    // print_rgb_array(&rgb_array);
 
-    // Get the RGB 3D array
-    let rgb_array = image_to_rgb_array(image_path);
-    // println!("RGB Array (3D):\n{:#?}", rgb_array);
-    print_rgb_array(&rgb_array);
+    let gif_path: &str = "/home/charles/projects/rust-practice/rusty_hemera_mini/src/office.gif";
+    let frame_deque = gif_to_deque(gif_path);
+    let fps: u64 = 10;
+    let time_between_frames = 1 / fps;
+    loop {
+        for frame in frame_deque.iter() {
+            print!("\x1b[0;0H");
+            print_rgb_array(&frame);
+            // frame_sleep(100);
+        }
+    }
 }

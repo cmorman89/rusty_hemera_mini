@@ -1,100 +1,106 @@
+// extern crate image;
+// extern crate ndarray;
+
+use image::{GenericImageView, Rgba, RgbaImage, GifDecoder, DynamicImage};
+use ndarray::{Array3, Array2, s};
 use std::thread;
 use std::time;
+use std::collections::VecDeque;
+
+fn mirror_row(row: &[u8]) -> impl Iterator<Item = &u8> {
+    row.iter().chain(row.iter().rev())
+}
+
+fn generate_rgb_escape(r: u8, g: u8, b: u8, is_foreground: bool) -> String {
+    if is_foreground {
+        format!("\x1b[38;2;{};{};{}m", r, g, b)
+    } else {
+        format!("\x1b[48;2;{};{};{}m", r, g, b)
+    }
+}
+
+fn frame_sleep(duration_ms: u64) {
+    thread::sleep(time::Duration::from_millis(duration_ms));
+}
+
+fn image_to_rgb_array(image_path: &str) -> Array3<u8> {
+    // Open the image file
+    let img = image::open(image_path).expect("Failed to open image");
+    
+    // Convert the image to RGBA (even if it's RGB, it will be handled as RGBA)
+    let (width, height) = img.dimensions();
+    let img_rgba = img.to_rgba8();
+
+    // Create a 3D ndarray for the RGB values
+    let mut rgb_array: Array3<u8> = Array3::zeros((height as usize, width as usize, 3));
+
+    for (x, y, pixel) in img_rgba.enumerate_pixels() {
+        let (r, g, b, _): (u8, u8, u8, u8) = pixel.0.into(); // We ignore the alpha channel here
+        rgb_array[[y as usize, x as usize, 0]] = r;
+        rgb_array[[y as usize, x as usize, 1]] = g;
+        rgb_array[[y as usize, x as usize, 2]] = b;
+    }
+
+    rgb_array
+}
+
+fn print_rgb_array(rgb_array: &Array3<u8>) {
+    let (h, w, _) = rgb_array.dim();
+    for y in 0..h {
+        if y % 2 == 0 && y < h - 2 {
+            for x in 0..w {
+                let fg_r = rgb_array[[y, x, 0]];
+                let fg_g = rgb_array[[y, x, 1]];
+                let fg_b = rgb_array[[y, x, 2]];
+                let bg_r = rgb_array[[y + 1, x, 0]];
+                let bg_g = rgb_array[[y + 1, x, 1]];
+                let bg_b = rgb_array[[y + 1, x, 2]];
+                print!("{}", generate_rgb_escape(fg_r, fg_g, fg_b, true));
+                print!("{}", generate_rgb_escape(bg_r, bg_g, bg_b, false));
+                print!("▀");
+            }
+
+            println!("\x1b[0m");
+        }
+    }
+}
+
+fn gif_to_deque(image_path: &str) -> VecDeque<Array3<u8>> {
+    let gif = image::open(image_path).expect("\n===========\nIMAGE NOT FOUND!\n===========\n");
+    let decoder = GifDecoder::new(&gif).expect("\n===========\nGIF DECODER FAILED TO PARSE GIF!\n===========\n");
+
+    let mut frame_deque: VecDeque<Array3<u8>> = VecDeque::new();
+
+    // Extract frames from the GIF
+    for frame in decoder.into_frames() {
+        let frame = frame.expect("\n===========\nFAILED TO PARSE FRAME!\n===========\n");
+        let buffer = frame.into_buffer();
+
+        let (gif_width, gif_height) = buffer.dimensions();
+        let mut gif_rgb_array: Array3<u8> = Array3::zeros((gif_height as usize, gif_width as usize, 3));
+
+        // Get the RGB values of the GIF frame
+        for (x, y, pixel) in img.to_rgba8().enumerate_pixels() {
+            // For now, we are ignoring the alpha channel
+            let (r, g, b, _): (u8, u8, u8, u8) = pixel.0.into();
+            gif_rgb_array[[y as usize, x as usize, 0]] = r;
+            gif_rgb_array[[y as usize, x as usize, 1]] = g;
+            gif_rgb_array[[y as usize, x as usize, 2]] = b;
+
+        }
+        
+        // Add the RGB array to the deque
+        frame_deque.push_back(gif_rgb_array);
+    }
+
+    frames_deque
+}
 
 fn main() {
-    let v_a: Vec<u8> = vec![0,1,0,1,1,0,1,1,1,0,1,1,1,1,0,1,1,1,1,1];
-    let v_b: Vec<u8> = vec![0,0,1,0,0,1,1,0,0,1,1,1,0,0,1,1,1,1,0,0];
-    let v_c: Vec<u8> = vec![0,0,0,1,0,0,0,1,1,0,0,0,1,1,1,0,0,0,1,1];
-    let v_d: Vec<u8> = vec![0,0,0,0,1,0,0,0,0,1,1,0,0,0,0,1,1,1,0,0];
-    let v_e: Vec<u8> = vec![0,0,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0,1,1,1];
-    let v_f: Vec<u8> = vec![0,0,0,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0,1,1];
-    let v_g: Vec<u8> = vec![0,0,0,0,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0,1];
-    let v_h: Vec<u8> = vec![0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0];
-    let v_i: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,0,0,0,0];
-    let v_j: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,0,0,0];
-    let v_k: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,0,0];
-    let v_l: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,0];
-    let v_m: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1];
-    let v_n: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1];
-    let v_o: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1];
-    let v_p: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1];
-    let v_q: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1];
-    let v_r: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1];
-    let v_s: Vec<u8> = vec![0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1];
+    let image_path = "/home/charles/projects/rust-practice/rusty_hemera_mini/src/parrot.png"; // Replace with your image file path
 
-    let mut v : Vec<Vec<u8>> = Vec::new();
-    v.push(v_a);
-    v.push(v_b);
-    v.push(v_c);
-    v.push(v_d);
-    v.push(v_e);
-    v.push(v_f);
-    v.push(v_g);
-    v.push(v_h);
-    v.push(v_i);
-    v.push(v_j);
-    v.push(v_k);
-    v.push(v_l);
-    v.push(v_m);
-    v.push(v_n);
-    v.push(v_o);
-    v.push(v_p);
-    v.push(v_q);
-    v.push(v_r);
-    v.push(v_s);
-
-
-    let mut fg_color: u8 = 0;
-    let mut bg_color: u8 = 0;
-    let fg_ansi_str = String::from("\x1b[38;5;");
-    let bg_ansi_str = String::from("\x1b[48;5;");
-    let ansi_reset = String::from("\x1b[0m");
-    let ansi_to_origin = String::from("\x1b[H");
-    let ansi_clear = String::from("\x1b[2J");
-
-    let mut i : u8 = 0;
-    let mut j : u8 = 6;
-
-    print!("{}", ansi_clear);
-    loop {
-        print!("{}", ansi_to_origin);
-
-        for row in v.iter() {
-            print!("{}{}m", fg_ansi_str, fg_color);
-            print!("{}{}m", bg_ansi_str, bg_color);
-
-            print_row(row);
-
-            println!("{}", ansi_reset);
-
-            fg_color = fg_color.wrapping_add(1);
-            bg_color = bg_color.wrapping_add(1);
-        }
-        i = i.wrapping_add(1);
-        j = j.wrapping_add(1);
-        // i = i % 255;
-        // j = j % 255;
-        fg_color = i;
-        bg_color = j;
-        thread::sleep(time::Duration::from_millis(1));
-    }
-}
-
-fn mirror_row(row: &Vec<u8>) -> Vec<u8> {
-    let mut reversed_row = row.clone();
-    reversed_row.reverse();
-    reversed_row
-}
-
-fn print_row(row: &Vec<u8>) {
-    let reversed_row: Vec<u8> = mirror_row(row);
-    let joined_row: Vec<u8> = row.iter().chain(reversed_row.iter()).copied().collect();
-    let joined_row = joined_row.iter().chain(joined_row.iter());
-    for pixel in joined_row {
-        if *pixel == 0 {
-            print!(" ");
-        } else {
-            print!("█");
-        }
-    }
+    // Get the RGB 3D array
+    let rgb_array = image_to_rgb_array(image_path);
+    // println!("RGB Array (3D):\n{:#?}", rgb_array);
+    print_rgb_array(&rgb_array);
 }

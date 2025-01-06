@@ -1,11 +1,14 @@
 // extern crate image;
 // extern crate ndarray;
 
-use image::{GenericImageView, Rgba, RgbaImage, GifDecoder, DynamicImage};
+use image::{DynamicImage, Rgba, RgbaImage, GenericImageView, ImageDecoder, AnimationDecoder, Frame, ImageBuffer};
 use ndarray::{Array3, Array2, s};
 use std::thread;
 use std::time;
 use std::collections::VecDeque;
+use std::fs::File;
+use image::codecs::gif::{GifDecoder, GifEncoder};
+use std::io::BufReader;
 
 fn mirror_row(row: &[u8]) -> impl Iterator<Item = &u8> {
     row.iter().chain(row.iter().rev())
@@ -66,34 +69,36 @@ fn print_rgb_array(rgb_array: &Array3<u8>) {
 }
 
 fn gif_to_deque(image_path: &str) -> VecDeque<Array3<u8>> {
-    let gif = image::open(image_path).expect("\n===========\nIMAGE NOT FOUND!\n===========\n");
-    let decoder = GifDecoder::new(&gif).expect("\n===========\nGIF DECODER FAILED TO PARSE GIF!\n===========\n");
+    let gif_file = BufReader::new(File::open(image_path).expect("\n===========\nIMAGE NOT FOUND!\n===========\n"));
+    let mut decoder = GifDecoder::new(gif_file).unwrap();
+    let frames = decoder.into_frames();
+    let frames = frames.collect_frames().expect("\n===========\nFAILED TO COLLECT FRAMES!\n===========\n");
 
     let mut frame_deque: VecDeque<Array3<u8>> = VecDeque::new();
 
     // Extract frames from the GIF
-    for frame in decoder.into_frames() {
-        let frame = frame.expect("\n===========\nFAILED TO PARSE FRAME!\n===========\n");
-        let buffer = frame.into_buffer();
-
-        let (gif_width, gif_height) = buffer.dimensions();
-        let mut gif_rgb_array: Array3<u8> = Array3::zeros((gif_height as usize, gif_width as usize, 3));
-
-        // Get the RGB values of the GIF frame
-        for (x, y, pixel) in img.to_rgba8().enumerate_pixels() {
-            // For now, we are ignoring the alpha channel
-            let (r, g, b, _): (u8, u8, u8, u8) = pixel.0.into();
-            gif_rgb_array[[y as usize, x as usize, 0]] = r;
-            gif_rgb_array[[y as usize, x as usize, 1]] = g;
-            gif_rgb_array[[y as usize, x as usize, 2]] = b;
-
-        }
+    for frame in frames{
+        let gif_rgb_array = process_frame(&frame);
         
         // Add the RGB array to the deque
         frame_deque.push_back(gif_rgb_array);
     }
 
-    frames_deque
+    frame_deque
+}
+
+fn process_frame(frame: &Frame) -> Array3<u8> {
+    let buffer: &ImageBuffer<Rgba<u8>, Vec<u8>> = &frame.clone().into_buffer();
+
+    let (w, h) = buffer.dimensions();
+    let mut rgb_array: Array3<u8> = Array3::zeros((h as usize, w as usize, 3));
+    for (x, y, pixel) in buffer.enumerate_pixels() {
+        let (r, g, b, _): (u8, u8, u8, u8) = pixel.0.into();
+        rgb_array[[y as usize, x as usize, 0]] = r;
+        rgb_array[[y as usize, x as usize, 1]] = g;
+        rgb_array[[y as usize, x as usize, 2]] = b;
+    }
+    rgb_array
 }
 
 fn main() {

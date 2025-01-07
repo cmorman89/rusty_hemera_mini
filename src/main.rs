@@ -107,6 +107,26 @@ fn print_rgb_array(rgb_array: &Array3<u8>, frame_buffer: &mut Vec<u8>) {
     handle.write_all(&frame_buffer).unwrap();
 }
 
+fn yuv_to_rgb(y: u8, u: u8, v: u8) -> (u8, u8, u8) {
+    /// Converts YUV color space to RGB color space
+    /// 
+    /// # Arguments
+    /// - `y` - The Y value
+    /// - `u` - The U value
+    /// - `v` - The V value
+    /// 
+    /// # Returns
+    /// - A tuple containing the RGB values
+    
+    let y = y as f32;
+    let u = u as f32 - 128.0;
+    let v = v as f32 - 128.0;
+    let r = (y + 1.402 * v).clamp(0.0, 255.0) as u8;
+    let g = (y - 0.344136 * u - 0.714136 * v).clamp(0.0, 255.0) as u8;
+    let b = (y + 1.772 * u).clamp(0.0, 255.0) as u8;
+    (r, g, b)
+}
+
 fn u8_to_bytes(u8_val: u8) -> [u8; 3] {
     /// Converts a u8 value to a 3 element array of ASCII bytes
     /// Avoids overhead of heap allocation for string conversion
@@ -180,7 +200,7 @@ fn process_frame(frame: &Frame) -> Array3<u8> {
 fn main() {
 
     // Path to the GIF file
-    let gif_path: &str = "/home/charles/projects/rust-practice/rusty_hemera_mini/asset/silverhands.gif";
+    let gif_path: &str = "asset/silverhands.gif";
     // Set the target frames per second
     let fps: u32 = 30;
 

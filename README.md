@@ -7,3 +7,7 @@ This is a sub-project of the NyxEngine repo. It is a minimalistic version of the
 ### Note:
 
 I am learning Rust as I go, so this code may not be idiomatic Rust -- or even correct Rust. But, I've always found the best way to learn is to bite off more than you can chew...and chew like hell until it makes sense. :)
+
+## Progress:
+
+So far, I am quite happy: [Check out the demos (based on a slower version)!](https://www.youtube.com/playlist?list=PLvkXEUKaigSyHm_Q2-Cmmdko0IKtBOLpU)

@@ -8,58 +8,77 @@ use std::fs::File;
 use image::codecs::gif::GifDecoder;
 use std::io::{BufReader, self, Write};
 
-fn generate_rgb_escape(r: &u8, g: &u8, b: &u8, is_foreground: bool) -> String {
-    if is_foreground {
-        format!("\x1b[38;2;{};{};{}m", r, g, b)
-    } else {
-        format!("\x1b[48;2;{};{};{}m", r, g, b)
-    }
-}
-
-fn frame_sleep(fps: u32, frame_start: time::Instant) {
-    let frame_duration = time::Duration::from_secs(1) / fps;
+fn frame_sleep(fps: &u32, frame_start: time::Instant) {
+    /// Sleeps the thread to maintain a target frame rate
+    /// 
+    /// # Arguments
+    /// - `fps` - The target frames per second
+    /// - `frame_start` - The time the frame started
+    /// 
+    /// # Returns
+    /// - None
+    
+    // Calculate the frame duration based on the target frames per second
+    let frame_duration = time::Duration::from_secs(1) / fps.clone();
+    // Calculate the elapsed time since the frame started
     let elapsed_time = frame_start.elapsed();
+    // If the frame finished rendering faster than the target frame duration, sleep the thread
     if elapsed_time < frame_duration {
         thread::sleep(frame_duration - elapsed_time);
     }
-    // thread::sleep(time::Duration::from_millis(duration_ms));
 }
 
 
 fn print_rgb_array(rgb_array: &Array3<u8>, frame_buffer: &mut Vec<u8>) {
-    let to_origin = b"\x1b[0H";
+    /// Prints an RGB array to the terminal
+    /// 
+    /// # Arguments
+    /// - `rgb_array` - The RGB array to print
+    /// - `frame_buffer` - The buffer to write the frame to
+    /// 
+    /// # Returns
+    /// - None
+    
+    // Clear the frame buffer from the previous frame
+    frame_buffer.clear();
+
+    // Get the stdout handle
     let stdout = io::stdout();
     let mut handle = stdout.lock();
-    let (h, w, _) = rgb_array.dim();
-    let byte_estimate: usize = h * w * 20;
+
+    // Preallocate the pixel values
     let mut fg_r: u8;
     let mut fg_g: u8;
     let mut fg_b: u8;
     let mut bg_r: u8;
     let mut bg_g: u8;
     let mut bg_b: u8;
+
+    // ANSI escape sequences pre-computed for performance
+    let to_origin = b"\x1b[0H";
     let fg_ansi: &[u8; 7] = b"\x1b[38;2;";
     let bg_ansi: &[u8; 7] = b"\x1b[48;2;";
     let ansi_sep: &[u8; 1] = b";";
     let ansi_end: &[u8; 1] = b"m";
     let print_char: &[u8] = "▀".as_bytes();
-    frame_buffer.clear();
+
+    // Start printing:
+    // Move the cursor to the top left corner
     frame_buffer.extend_from_slice(to_origin);
+    let (h, w, _) = rgb_array.dim();
     for y in 0..h {
         // Only print even rows due to the stacked vertical pixels sharing one character cell
         if y % 2 == 0 && y < h - 2 {
             for x in 0..w {
-
                 // Extract the RGB values from the array
+                // Foreground
                 fg_r = rgb_array[[y, x, 0]];
                 fg_g = rgb_array[[y, x, 1]];
                 fg_b = rgb_array[[y, x, 2]];
+                // Background
                 bg_r = rgb_array[[y + 1, x, 0]];
                 bg_g = rgb_array[[y + 1, x, 1]];
                 bg_b = rgb_array[[y + 1, x, 2]];
-
-                // frame_buffer.extend_from_slice(format!("\x1b[38;2;{};{};{}m", fg_r, fg_g, fg_b).as_bytes());
-                // frame_buffer.extend_from_slice(format!("\x1b[48;2;{};{};{}m", bg_r, bg_g, bg_b).as_bytes());
 
                 // Generate the foreground ANSI escape sequence
                 frame_buffer.extend_from_slice(fg_ansi);
@@ -106,29 +125,47 @@ fn u8_to_bytes(u8_val: u8) -> [u8; 3] {
 }
 
 fn gif_to_deque(image_path: &str) -> VecDeque<Array3<u8>> {
-    // Open the GIF file
+    /// Converts a GIF file to a deque of RGB arrays
+    /// 
+    /// # Arguments
+    /// - `image_path` - The path to the GIF file
+    /// 
+    /// # Returns
+    /// - A deque of RGB arrays
+    
+    // Create a deque to store the frames
+    let mut frame_deque: VecDeque<Array3<u8>> = VecDeque::new();
+
+    // Open the GIF file and get the frames
     let gif_file = BufReader::new(File::open(image_path).expect("\n===========\nIMAGE NOT FOUND!\n===========\n"));
     let decoder = GifDecoder::new(gif_file).unwrap();
     let frames = decoder.into_frames();
     let frames = frames.collect_frames().expect("\n===========\nFAILED TO COLLECT FRAMES!\n===========\n");
     
-    let mut frame_deque: VecDeque<Array3<u8>> = VecDeque::new();
-    
     // Extract frames from the GIF
     for frame in frames{
         let gif_rgb_array = process_frame(&frame);
-        
         // Add the RGB array to the deque
         frame_deque.push_back(gif_rgb_array);
     }
-    
+    // Return the deque of RGB array frames
     frame_deque
 }
 
 fn process_frame(frame: &Frame) -> Array3<u8> {
+    /// Processes a GIF frame into an RGB array
+    /// 
+    /// # Arguments
+    /// - `frame` - The GIF frame to process
+    /// 
+    /// # Returns
+    /// - An RGB array
+    
+    // Get the buffer from the frame
     let buffer: &ImageBuffer<Rgba<u8>, Vec<u8>> = &frame.buffer();
-
+    // Get the dimensions of the buffer
     let (w, h) = buffer.dimensions();
+    // Create an RGB array to store the pixel values
     let mut rgb_array: Array3<u8> = Array3::zeros((h as usize, w as usize, 3));
     for (x, y, pixel) in buffer.enumerate_pixels() {
         let (r, g, b, _): (u8, u8, u8, u8) = pixel.0.into();
@@ -136,22 +173,19 @@ fn process_frame(frame: &Frame) -> Array3<u8> {
         rgb_array[[y as usize, x as usize, 1]] = g;
         rgb_array[[y as usize, x as usize, 2]] = b;
     }
+    // Return the RGB array
     rgb_array
 }
 
-fn generate_file_path(file_name: &str) -> String {
-    let mut path = String::from(format!("../asset/{}.gif", file_name));
-    println!("{}", path);
-    path
-}
-
 fn main() {
-    let file_name: &str = "doom-sword";
-    let gif_path: &str = &generate_file_path(file_name);
+
+    // Path to the GIF file
     let gif_path: &str = "/home/charles/projects/rust-practice/rusty_hemera_mini/asset/silverhands.gif";
+    // Set the target frames per second
+    let fps: u32 = 30;
+
+    // Convert the GIF to a deque of RGB arrays
     let frame_deque = gif_to_deque(gif_path);
-    let fps: u32 = 10;
-    let time_between_frames = 1 / fps;
     let rgb_array = frame_deque.front().unwrap();
     let (h, w, _) = rgb_array.dim();
     let byte_estimate: usize = h * w * 20;
@@ -162,7 +196,7 @@ fn main() {
         for frame in frame_deque.iter() {
             let start_time = time::Instant::now();
             print_rgb_array(&frame, &mut frame_buffer);
-            frame_sleep(30, start_time);
+            frame_sleep(&fps, start_time);
         }
     }
 }

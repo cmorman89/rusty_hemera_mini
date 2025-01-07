@@ -50,20 +50,26 @@ fn image_to_rgb_array(image_path: &str) -> Array3<u8> {
 fn print_rgb_array(rgb_array: &Array3<u8>) {
     let (h, w, _) = rgb_array.dim();
     for y in 0..h {
+        let mut row_buffer: Vec<String> = Vec::new();
         if y % 2 == 0 && y < h - 2 {
             for x in 0..w {
-                let fg_r = rgb_array[[y, x, 0]];
-                let fg_g = rgb_array[[y, x, 1]];
-                let fg_b = rgb_array[[y, x, 2]];
-                let bg_r = rgb_array[[y + 1, x, 0]];
-                let bg_g = rgb_array[[y + 1, x, 1]];
-                let bg_b = rgb_array[[y + 1, x, 2]];
-                print!("{}", generate_rgb_escape(fg_r, fg_g, fg_b, true));
-                print!("{}", generate_rgb_escape(bg_r, bg_g, bg_b, false));
-                print!("▀");
+                let fg_r: u8 = rgb_array[[y, x, 0]];
+                let fg_g: u8 = rgb_array[[y, x, 1]];
+                let fg_b: u8 = rgb_array[[y, x, 2]];
+                let bg_r: u8 = rgb_array[[y + 1, x, 0]];
+                let bg_g: u8 = rgb_array[[y + 1, x, 1]];
+                let bg_b: u8 = rgb_array[[y + 1, x, 2]];
+                let fg_ansi: String = generate_rgb_escape(fg_r, fg_g, fg_b, true);
+                let bg_ansi: String = generate_rgb_escape(bg_r, bg_g, bg_b, false);
+                let print_char:String = "▀".to_string();
+                row_buffer.push(fg_ansi);
+                row_buffer.push(bg_ansi);
+                row_buffer.push(print_char);
+                // print!("{}{}▀", generate_rgb_escape(fg_r, fg_g, fg_b, true), generate_rgb_escape(bg_r, bg_g, bg_b, false));
+                // print!("▀");
             }
 
-            println!("\x1b[0m");
+            println!("{}\x1b[0m", row_buffer.join(""));
         }
     }
 }

@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 ndarray = "0.16.1"
 image = "0.25.5"
+
+[dev-dependencies]
+criterion = "0.4"

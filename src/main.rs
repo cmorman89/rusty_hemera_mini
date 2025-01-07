@@ -1,14 +1,12 @@
 // extern crate image;
 // extern crate ndarray;
-
 use image::{Rgba, AnimationDecoder, Frame, ImageBuffer};
 use ndarray::Array3;
-use std::thread;
-use std::time;
+use std::{thread, time, vec};
 use std::collections::VecDeque;
 use std::fs::File;
 use image::codecs::gif::GifDecoder;
-use std::io::BufReader;
+use std::io::{BufReader, self, Write};
 
 fn generate_rgb_escape(r: &u8, g: &u8, b: &u8, is_foreground: bool) -> String {
     if is_foreground {
@@ -28,45 +26,89 @@ fn frame_sleep(fps: u32, frame_start: time::Instant) {
 }
 
 
-fn print_rgb_array(rgb_array: &Array3<u8>) {
+fn print_rgb_array(rgb_array: &Array3<u8>, frame_buffer: &mut Vec<u8>) {
+    let to_origin = b"\x1b[0H";
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
     let (h, w, _) = rgb_array.dim();
+    let byte_estimate: usize = h * w * 20;
     let mut fg_r: u8;
     let mut fg_g: u8;
     let mut fg_b: u8;
     let mut bg_r: u8;
     let mut bg_g: u8;
     let mut bg_b: u8;
-    let mut fg_ansi: String = String::new();
-    let mut bg_ansi: String = String::new();
-    let print_char:String = "▀".to_string();
-    let mut frame_buffer: String = String::new();
+    let fg_ansi: &[u8; 7] = b"\x1b[38;2;";
+    let bg_ansi: &[u8; 7] = b"\x1b[48;2;";
+    let ansi_sep: &[u8; 1] = b";";
+    let ansi_end: &[u8; 1] = b"m";
+    let print_char: &[u8] = "▀".as_bytes();
+    frame_buffer.clear();
+    frame_buffer.extend_from_slice(to_origin);
     for y in 0..h {
-        let mut row_buffer: String = String::new();
+        // Only print even rows due to the stacked vertical pixels sharing one character cell
         if y % 2 == 0 && y < h - 2 {
             for x in 0..w {
+
+                // Extract the RGB values from the array
                 fg_r = rgb_array[[y, x, 0]];
                 fg_g = rgb_array[[y, x, 1]];
                 fg_b = rgb_array[[y, x, 2]];
                 bg_r = rgb_array[[y + 1, x, 0]];
                 bg_g = rgb_array[[y + 1, x, 1]];
                 bg_b = rgb_array[[y + 1, x, 2]];
-                fg_ansi = generate_rgb_escape(&fg_r, &fg_g, &fg_b, true);
-                bg_ansi = generate_rgb_escape(&bg_r, &bg_g, &bg_b, false);
-                row_buffer.push_str(&fg_ansi);
-                row_buffer.push_str(&bg_ansi);
-                row_buffer.push_str(&print_char);
+
+                // frame_buffer.extend_from_slice(format!("\x1b[38;2;{};{};{}m", fg_r, fg_g, fg_b).as_bytes());
+                // frame_buffer.extend_from_slice(format!("\x1b[48;2;{};{};{}m", bg_r, bg_g, bg_b).as_bytes());
+
+                // Generate the foreground ANSI escape sequence
+                frame_buffer.extend_from_slice(fg_ansi);
+                frame_buffer.extend_from_slice(&u8_to_bytes(fg_r));
+                frame_buffer.extend_from_slice(ansi_sep);
+                frame_buffer.extend_from_slice(&u8_to_bytes(fg_g));
+                frame_buffer.extend_from_slice(ansi_sep);
+                frame_buffer.extend_from_slice(&u8_to_bytes(fg_b));
+                frame_buffer.extend_from_slice(ansi_end);
+
+                // Generate the background ANSI escape sequence
+                frame_buffer.extend_from_slice(bg_ansi);
+                frame_buffer.extend_from_slice(&u8_to_bytes(bg_r));
+                frame_buffer.extend_from_slice(ansi_sep);
+                frame_buffer.extend_from_slice(&u8_to_bytes(bg_g));
+                frame_buffer.extend_from_slice(ansi_sep);
+                frame_buffer.extend_from_slice(&u8_to_bytes(bg_b));
+                frame_buffer.extend_from_slice(ansi_end);
+
+                // Print the character
+                frame_buffer.extend_from_slice(&print_char);
             }
-            row_buffer.push_str("\x1b[0m\n");
-            frame_buffer.push_str(&row_buffer);
-            // println!("{}\x1b[0m", row_buffer);
+            frame_buffer.extend_from_slice(b"\x1b[0m\n");
         }
     }
-    print!("\x1b[0;0H{}", frame_buffer);
+    handle.write_all(&frame_buffer).unwrap();
+}
+
+fn u8_to_bytes(u8_val: u8) -> [u8; 3] {
+    /// Converts a u8 value to a 3 element array of ASCII bytes
+    /// Avoids overhead of heap allocation for string conversion
+    /// 
+    /// # Arguments
+    /// - `u8_val` - The u8 value to convert
+    /// 
+    /// # Returns
+    /// - A 3 element array of ASCII bytes
+    
+    let mut bytes: [u8; 3] = [0; 3];
+    bytes[0] = u8_val / 100 + b'0';
+    bytes[1] = (u8_val % 100) / 10 + b'0';
+    bytes[2] = u8_val % 10 + b'0';
+    bytes
 }
 
 fn gif_to_deque(image_path: &str) -> VecDeque<Array3<u8>> {
+    // Open the GIF file
     let gif_file = BufReader::new(File::open(image_path).expect("\n===========\nIMAGE NOT FOUND!\n===========\n"));
-    let mut decoder = GifDecoder::new(gif_file).unwrap();
+    let decoder = GifDecoder::new(gif_file).unwrap();
     let frames = decoder.into_frames();
     let frames = frames.collect_frames().expect("\n===========\nFAILED TO COLLECT FRAMES!\n===========\n");
     
@@ -84,7 +126,7 @@ fn gif_to_deque(image_path: &str) -> VecDeque<Array3<u8>> {
 }
 
 fn process_frame(frame: &Frame) -> Array3<u8> {
-    let buffer: &ImageBuffer<Rgba<u8>, Vec<u8>> = &frame.clone().into_buffer();
+    let buffer: &ImageBuffer<Rgba<u8>, Vec<u8>> = &frame.buffer();
 
     let (w, h) = buffer.dimensions();
     let mut rgb_array: Array3<u8> = Array3::zeros((h as usize, w as usize, 3));
@@ -97,18 +139,30 @@ fn process_frame(frame: &Frame) -> Array3<u8> {
     rgb_array
 }
 
+fn generate_file_path(file_name: &str) -> String {
+    let mut path = String::from(format!("../asset/{}.gif", file_name));
+    println!("{}", path);
+    path
+}
+
 fn main() {
-    
-    let gif_path: &str = "/home/charles/projects/rust-practice/rusty_hemera_mini/src/deshawn.gif";
+    let file_name: &str = "doom-sword";
+    let gif_path: &str = &generate_file_path(file_name);
+    let gif_path: &str = "/home/charles/projects/rust-practice/rusty_hemera_mini/asset/silverhands.gif";
     let frame_deque = gif_to_deque(gif_path);
     let fps: u32 = 10;
     let time_between_frames = 1 / fps;
+    let rgb_array = frame_deque.front().unwrap();
+    let (h, w, _) = rgb_array.dim();
+    let byte_estimate: usize = h * w * 20;
+    let mut frame_buffer: Vec<u8> = Vec::with_capacity(byte_estimate);
+
+    print!("\x1b[0;0H");
     loop {
         for frame in frame_deque.iter() {
-            // print!("\x1b[0;0H");
             let start_time = time::Instant::now();
-            print_rgb_array(&frame);
-            frame_sleep(60, start_time);
+            print_rgb_array(&frame, &mut frame_buffer);
+            frame_sleep(30, start_time);
         }
     }
 }

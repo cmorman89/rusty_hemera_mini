@@ -117,7 +117,7 @@ fn main() {
     //   - ffmpeg-devel (or equivalent)
     
     // Path to the video file
-    let video_path = "asset/small_2.mp4";
+    let video_path = "asset/cp2077.mp4";
 
     // Initialize ffmpeg
     ffmpeg::init().expect("Failed to initialize ffmpeg");
@@ -199,19 +199,20 @@ fn main() {
         
             // While the decoder has frames to process, process them
             while decoder.receive_frame(&mut input_frame).is_ok() {
-                // Convert the video frame to an RGB frame
-                video_to_rgb.run(&input_frame, &mut rgb_frame).expect( "Failed to convert video frame to RGB");
+                if frame_index % 2 == 0 {
+                    // Convert the video frame to an RGB frame
+                    video_to_rgb.run(&input_frame, &mut rgb_frame).expect( "Failed to convert video frame to RGB");
 
-                // Now that we have the RGB frame, we can view the pixel data and the actual stride
-                pixel_data = rgb_frame.data(0);
-                stride = rgb_frame.stride(0) / 3;
+                    // Now that we have the RGB frame, we can view the pixel data and the actual stride
+                    pixel_data = rgb_frame.data(0);
+                    stride = rgb_frame.stride(0) / 3;
 
-                // Create a view of the pixel data instead of copying it (ArrayView3 vs Array3)
-                rgb_view = ArrayView3::from_shape((h, stride, 3), pixel_data).expect("Failed to view pixel data");
+                    // Create a view of the pixel data instead of copying it (ArrayView3 vs Array3)
+                    rgb_view = ArrayView3::from_shape((h, stride, 3), pixel_data).expect("Failed to view pixel data");
 
-                // Print the RGB view to the terminal
-                print_rgb_array(&rgb_view, &mut frame_buffer, true);
-
+                    // Print the RGB view to the terminal
+                    print_rgb_array(&rgb_view, &mut frame_buffer, true);
+                }
                 // Increment the frame index
                 frame_index += 1;
 

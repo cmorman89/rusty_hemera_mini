@@ -1,6 +1,7 @@
-use ndarray::{ArrayView3};
+use ndarray::ArrayView3;  
 use std::io::{self, Write};
 use ffmpeg_next::{self as ffmpeg};
+use rayon::prelude::*;
 
 /// Prints an RGB array to the terminal
 /// 
@@ -45,53 +46,66 @@ fn print_rgb_array(rgb_array: &ArrayView3<u8>, frame_buffer: &mut Vec<u8>, trim_
     // Move the cursor to the top left corner
     frame_buffer.extend_from_slice(to_origin);
      // Only print even rows due to the stacked vertical pixels sharing one character cell
-    for y in (0..h).step_by(2) {
-        for x in 0..w {
-            // Extract the RGB values from the array
-            // Foreground
-            fg_r = rgb_array[[y, x, 0]];
-            fg_g = rgb_array[[y, x, 1]];
-            fg_b = rgb_array[[y, x, 2]];
-            // Background
-            bg_r = rgb_array[[y + 1, x, 0]];
-            bg_g = rgb_array[[y + 1, x, 1]];
-            bg_b = rgb_array[[y + 1, x, 2]];
+     // Use Rayon to parallelize the loop
+     let row_chunks: Vec<_> = (0..h).step_by(2).collect();
+     let chunk_results: Vec<Vec<u8>> = row_chunks
+        .into_par_iter()
+        .map(|y| {
+            let mut chunk_buffer: Vec<u8> = Vec::new();
+            for x in 0..w {
+                
+                // Extract the RGB values from the array
+                // Foreground
+                let fg_r = rgb_array[[y, x, 0]];
+                let fg_g = rgb_array[[y, x, 1]];
+                let fg_b = rgb_array[[y, x, 2]];
+                // Background
+                let bg_r = rgb_array[[y + 1, x, 0]];
+                let bg_g = rgb_array[[y + 1, x, 1]];
+                let bg_b = rgb_array[[y + 1, x, 2]];
 
-            // Generate the foreground ANSI escape sequence
-            //
-            // - The format is: 
-            //   - Foreground: \x1b[38;2;{r};{g};{b}m
-            //   - Background: \x1b[48;2;{r};{g};{b}m
-            //
-            // - The mathmatical operations are used to convert the u8 to bytes without using a string
-            //   (A string would require a heap allocation for every pixel color *channel* -- too slow)
-            //
-            // - The math was moved inline to avoid the overhead of a function call, again for every pixel
-            //   color *channel* (3 per pixel, 6 per loop iteration, or 7,200,000 calls per second for a 
-            //   400*200 video at 30fps. Ouch.)
-            frame_buffer.extend_from_slice(fg_ansi);
-            frame_buffer.extend_from_slice(&[fg_r / 100 + b'0', (fg_r % 100) / 10 + b'0', fg_r % 10 + b'0']);
-            frame_buffer.extend_from_slice(ansi_sep);
-            frame_buffer.extend_from_slice(&[fg_g / 100 + b'0', (fg_g % 100) / 10 + b'0', fg_g % 10 + b'0']);
-            frame_buffer.extend_from_slice(ansi_sep);
-            frame_buffer.extend_from_slice(&[fg_b / 100 + b'0', (fg_b % 100) / 10 + b'0', fg_b % 10 + b'0']);
-            frame_buffer.extend_from_slice(ansi_end);
+                // Generate the foreground ANSI escape sequence
+                //
+                // - The format is: 
+                //   - Foreground: \x1b[38;2;{r};{g};{b}m
+                //   - Background: \x1b[48;2;{r};{g};{b}m
+                //
+                // - The mathmatical operations are used to convert the u8 to bytes without using a string
+                //   (A string would require a heap allocation for every pixel color *channel* -- too slow)
+                //
+                // - The math was moved inline to avoid the overhead of a function call, again for every pixel
+                //   color *channel* (3 per pixel, 6 per loop iteration, or 7,200,000 calls per second for a 
+                //   400*200 video at 30fps. Ouch.)
+                chunk_buffer.extend_from_slice(fg_ansi);
+                chunk_buffer.extend_from_slice(&[fg_r / 100 + b'0', (fg_r % 100) / 10 + b'0', fg_r % 10 + b'0']);
+                chunk_buffer.extend_from_slice(ansi_sep);
+                chunk_buffer.extend_from_slice(&[fg_g / 100 + b'0', (fg_g % 100) / 10 + b'0', fg_g % 10 + b'0']);
+                chunk_buffer.extend_from_slice(ansi_sep);
+                chunk_buffer.extend_from_slice(&[fg_b / 100 + b'0', (fg_b % 100) / 10 + b'0', fg_b % 10 + b'0']);
+                chunk_buffer.extend_from_slice(ansi_end);
 
-            // Generate the background ANSI escape sequence
-            frame_buffer.extend_from_slice(bg_ansi);
-           frame_buffer.extend_from_slice(&[bg_r / 100 + b'0', (bg_r % 100) / 10 + b'0', bg_r % 10 + b'0']);
-            frame_buffer.extend_from_slice(ansi_sep);
-            frame_buffer.extend_from_slice(&[bg_g / 100 + b'0', (bg_g % 100) / 10 + b'0', bg_g % 10 + b'0']);
-            frame_buffer.extend_from_slice(ansi_sep);
-            frame_buffer.extend_from_slice(&[bg_b / 100 + b'0', (bg_b % 100) / 10 + b'0', bg_b % 10 + b'0']);
-            frame_buffer.extend_from_slice(ansi_end);
+                // Generate the background ANSI escape sequence
+                chunk_buffer.extend_from_slice(bg_ansi);
+                chunk_buffer.extend_from_slice(&[bg_r / 100 + b'0', (bg_r % 100) / 10 + b'0', bg_r % 10 + b'0']);
+                chunk_buffer.extend_from_slice(ansi_sep);
+                chunk_buffer.extend_from_slice(&[bg_g / 100 + b'0', (bg_g % 100) / 10 + b'0', bg_g % 10 + b'0']);
+                chunk_buffer.extend_from_slice(ansi_sep);
+                chunk_buffer.extend_from_slice(&[bg_b / 100 + b'0', (bg_b % 100) / 10 + b'0', bg_b % 10 + b'0']);
+                chunk_buffer.extend_from_slice(ansi_end);
 
-            // Append the block character
-            frame_buffer.extend_from_slice(print_char);
+                // Append the block character
+                chunk_buffer.extend_from_slice(print_char);
         }
         // Reset formatting and move to the next line
-        frame_buffer.extend_from_slice(ansi_reset);
+        chunk_buffer.extend_from_slice(ansi_reset);
+        chunk_buffer
+    })
+    .collect();
+
+    for chunk in chunk_results {
+        frame_buffer.extend_from_slice(&chunk);
     }
+
     io::stdout().lock().write_all(&frame_buffer).unwrap();
 }
 

@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 ndarray = "0.16.1"
 ffmpeg-next = "7.1.0"
+rayon = "1.5.1"

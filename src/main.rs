@@ -1,5 +1,6 @@
-use ndarray::{ArrayView3};
+use ndarray::{Array3, ArrayView3, Zip};
 use std::io::{self, Write};
+use std::mem;
 use ffmpeg_next::{self as ffmpeg};
 
 /// Prints an RGB array to the terminal
@@ -95,7 +96,156 @@ fn print_rgb_array(rgb_array: &ArrayView3<u8>, frame_buffer: &mut Vec<u8>, trim_
     io::stdout().lock().write_all(&frame_buffer).unwrap();
 }
 
+fn generate_byte_buffer(h: usize, w: usize) -> Vec<u8> {
+    let mut byte_buffer: Vec<u8> = Vec::with_capacity(h * w * 20);
+    byte_buffer
+}
 
+fn generate_framebuffers(h: usize, w: usize) -> (ndarray::Array3<u8>, ndarray::Array3<u8>, ndarray::Array3<u8>) {
+    let backbuffer = Array3::<u8>::zeros((h, w, 3));
+    let frontbuffer = Array3::<u8>::zeros((h, w, 3));
+    let delta_framebuffer = Array3::<u8>::zeros((h, w, 3));
+    (backbuffer, frontbuffer, delta_framebuffer)
+}
+
+fn swap_framebuffer_pointers(backbuffer: &mut Array3<u8>, frontbuffer: &mut Array3<u8>) {
+    mem::swap(backbuffer, frontbuffer);
+}
+
+fn generate_delta_frame(front_frame: &ArrayView3<u8>, back_frame: &ArrayView3<u8>, delta_frame: &mut Array3<u8>) {
+    Zip::from(delta_frame)
+        .and(front_frame)
+        .and(back_frame)
+        .for_each(|delta_pixel, front_pixel, back_pixel| {
+            if back_pixel != front_pixel {
+                *delta_pixel = *front_pixel;
+            }
+            else {
+                *delta_pixel = 0;
+            }
+        });
+}
+
+fn rasterize_delta_frame(delta_frame: &Array3<u8>, byte_buffer: &mut Vec<u8>) {
+    //  Steps:
+    //  1. Accept an input frame and the needed buffers
+    //  2. Check if there was a previous frame
+    //  3. If there was a previous frame, generate a delta frame
+    //  4. Rasterize the delta frame to the byte buffer
+    //
+}
+
+fn print_frame(byte_buffer: &Vec<u8>) {
+    io::stdout().lock().write_all(&byte_buffer).unwrap();
+}
+
+fn play_file(file_path: &str) {
+    // Initialize ffmpeg
+    initialize_ffmpeg();
+
+    // Open the video file to get the input context
+    let ictx: ffmpeg_next::format::context::Input = open_file(file_path);
+
+    // Get the index of the correct (video) stream in the input video file
+    let mut decoder = get_decoder(&ictx);
+
+    // Create video to RGB context and empty ffmpeg frames to hold each
+    let mut video_to_rgb = get_video_to_rgb_context(&decoder);
+    let mut ffmpeg_frame = generate_ffmpeg_frame();
+    let mut rgb_frame = generate_ffmpeg_frame();
+
+    // Get the dimensions of the video
+    let ffmpeg_h = decoder.height() as usize;
+    let ffmpeg_w = decoder.stride(0) as usize;
+
+    // Generate the framebuffers
+    let (backbuffer, frontbuffer, delta_framebuffer) = generate_framebuffers(ffmpeg_h, ffmpeg_w);
+
+    // Create the byte buffer to store the final output
+    let mut byte_buffer = generate_byte_buffer(ffmpeg_h, ffmpeg_w);
+
+
+}
+
+fn initialize_ffmpeg() {
+    match ffmpeg::init() {
+        Ok(_) => {},
+        Err(e) => {
+            eprintln!("Failed to initialize ffmpeg: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn open_file(file_path: &str) -> ffmpeg::format::context::Input {
+    match ffmpeg::format::input(file_path) {
+        Ok(ictx) => {
+            ictx
+        },
+        Err(e) => {
+            eprintln!("Failed to open input file: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn get_video_stream_index(ictx: &ffmpeg::format::context::Input) -> usize {
+    match ictx.streams().best(ffmpeg::media::Type::Video) {
+        Some(video_stream) => {
+            video_stream.index()
+        },
+        None => {
+            eprintln!("Failed to get best video stream");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn get_decoder_context(ictx: &ffmpeg::format::context::Input, video_stream_index: usize) -> ffmpeg_next::codec::Context {
+    let decoder_context = ffmpeg::codec::context::Context::from_parameters(
+        ictx
+            .stream(video_stream_index).expect("Failed to get video stream")
+            .parameters(),
+        ).expect("Failed to create decoder");
+    decoder_context
+}
+
+fn get_decoder(ictx: &ffmpeg_next::format::context::Input) -> ffmpeg_next::codec::decoder::Video {
+
+    let decoder_context = get_decoder_context(&ictx, get_video_stream_index(&ictx));
+    match decoder_context.decoder().video() {
+        Ok(decoder) => {
+            decoder
+        },
+        Err(e) => {
+            eprintln!("Failed to create video decoder: {}", e);
+            std::process::exit(1);
+        }
+}
+
+
+fn get_video_to_rgb_context(decoder: &ffmpeg_next::codec::decoder::Video) -> ffmpeg::software::scaling::context::Context {
+    let src_format = decoder.format();
+    let src_w = decoder.width();
+    let src_h = decoder.height();
+    let dst_format = ffmpeg::util::format::Pixel::RGB24;
+    let dst_w = decoder.width();
+    let dst_h = decoder.height();
+    let flags = ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR;
+    match ffmpeg::software::scaling::context::Context::get(src_format, src_w, src_h, dst_format, dst_w, dst_h, flags) {
+        Ok(video_to_rgb) => {
+            video_to_rgb
+        },
+        Err(e) => {
+            eprintln!("Failed to create video to RGB context: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn generate_ffmpeg_frame() -> ffmpeg::util::frame::Video {
+    ffmpeg::util::frame::Video::empty()
+}
 fn main() {
 
     // HOW TO USE:
@@ -119,38 +269,38 @@ fn main() {
     // Path to the video file
     let video_path = "asset/cp2077.mp4";
 
-    // Initialize ffmpeg
-    ffmpeg::init().expect("Failed to initialize ffmpeg");
+    // // Initialize ffmpeg
+    // ffmpeg::init().expect("Failed to initialize ffmpeg");
 
-    // Open the video file to get the input context
-    let mut ictx = ffmpeg::format::input(&video_path).expect("Failed to open input file");
+    // // Open the video file to get the input context
+    // let mut ictx = ffmpeg::format::input(&video_path).expect("Failed to open input file");
 
-    // Get the index of the correct (video) stream in the input video file
-    let video_stream_index = ictx
-        .streams()
-        .best(ffmpeg::media::Type::Video).expect("Failed to get best video stream")
-        .index();
+    // // Get the index of the correct (video) stream in the input video file
+    // let video_stream_index = ictx
+    //     .streams()
+    //     .best(ffmpeg::media::Type::Video).expect("Failed to get best video stream")
+    //     .index();
 
-    // Get the context from the video stream
-    let decoder_context = ffmpeg::codec::context::Context::from_parameters(
-        ictx
-            .stream(video_stream_index).expect("Failed to get video stream")
-            .parameters(),
-        ).expect("Failed to create decoder");
+    // // Get the context from the video stream
+    // let decoder_context: ffmpeg_next::codec::Context = ffmpeg::codec::context::Context::from_parameters(
+    //     ictx
+    //         .stream(video_stream_index).expect("Failed to get video stream")
+    //         .parameters(),
+    //     ).expect("Failed to create decoder");
     
-    // Create a video decoder from the decoder context
-    let mut decoder = decoder_context.decoder().video().expect("Failed to create video decoder");
+    // // Create a video decoder from the decoder context
+    // let mut decoder = decoder_context.decoder().video().expect("Failed to create video decoder");
 
     // Create a context to convert the video to RGB
-    let mut video_to_rgb = ffmpeg::software::scaling::context::Context::get(
-        decoder.format(),
-        decoder.width(),
-        decoder.height(),
-        ffmpeg::util::format::Pixel::RGB24,
-        decoder.width(),
-        decoder.height(),
-        ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR
-    ).expect("Failed to create video to RGB context");
+    // let mut video_to_rgb = ffmpeg::software::scaling::context::Context::get(
+    //     decoder.format(),
+    //     decoder.width(),
+    //     decoder.height(),
+    //     ffmpeg::util::format::Pixel::RGB24,
+    //     decoder.width(),
+    //     decoder.height(),
+    //     ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR
+    // ).expect("Failed to create video to RGB context");
     
     // Track if the needed variables are initialized
     let mut hemera_is_initialized = false;
@@ -220,4 +370,5 @@ fn main() {
         }
     }
 
+}
 }

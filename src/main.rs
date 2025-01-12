@@ -139,10 +139,19 @@ fn generate_delta_frame(front_frame: &ArrayView3<u8>, back_frame: &ArrayView3<u8
         .and(back_frame)
         .for_each(|delta_pixel, front_pixel, back_pixel| {
             if back_pixel != front_pixel {
-                *delta_pixel = *front_pixel;
+                *delta_pixel = *back_pixel;
+                // println!("\nC: CHANGED Pixel Data:");
+                // println!("     -  Front: {} ", front_pixel);
+                // println!("     -  Back:  {} ", back_pixel);
+                // println!("     -> Delta: {} ", delta_pixel);
+                // std::process::exit(0);
             }
             else {
                 *delta_pixel = 0;
+                // println!("\nU: UNCHANGED Pixel Data:");
+                // println!("     -  Front: {} ", front_pixel);
+                // println!("     -  Back:  {} ", back_pixel);
+                // println!("     -> Delta: {} ", delta_pixel);
             }
         });
 }
@@ -158,6 +167,11 @@ fn rasterize_delta_frame(delta_frame: &Array3<u8>, byte_buffer: &mut Vec<u8>) {
     // 7. Continue until zeroed pixels are found
     // 8. Repeat until the end of the frame
     // 9. Issue a reset ANSI sequence to clear the color state 
+    print!("Delta Frame:");
+    let (h, w, _) = delta_frame.dim();
+    print!("R:\n {:?}", &delta_frame.slice(ndarray::s![.., .., 0]));
+    print!("G:\n {:?}", &delta_frame.slice(ndarray::s![.., .., 1]));
+    print!("B:\n {:?}", &delta_frame.slice(ndarray::s![.., .., 2]));
 }
 
 fn print_frame(byte_buffer: &Vec<u8>) {
@@ -295,9 +309,13 @@ fn play_file(file_path: &str) {
                     // WORK IN PROGRESS - ONLY PRINTS SIZES SO FAR
                     // =========================
                     generate_delta_frame(&frontbuffer, &backbuffer, &mut delta_framebuffer);
+                    rasterize_delta_frame(&delta_framebuffer, &mut byte_buffer);
                 }
                 // Increment the frame index
                 frame_index += 1;
+                if frame_index == 2 {
+                    std::process::exit(0);
+                }
 
             }
         }

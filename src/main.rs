@@ -12,7 +12,7 @@ use ffmpeg_next::{self as ffmpeg};
 /// 
 /// # Returns
 /// - None
-fn print_rgb_array(rgb_backbuffer: &ArrayView3<u8>, byte_buffer: &mut Vec<u8>, trim_stride: bool) {
+fn print_rgb_array(rgb_backbuffer: &ArrayView3<u8>, byte_buffer: &mut Vec<u8>, trim_stride: bool, byte_map: &[[u8; 3]; 256]) {
 
     // Clear the frame buffer from the previous frame
     byte_buffer.clear();
@@ -70,23 +70,38 @@ fn print_rgb_array(rgb_backbuffer: &ArrayView3<u8>, byte_buffer: &mut Vec<u8>, t
             // - The math was moved inline to avoid the overhead of a function call, again for every pixel
             //   color *channel* (3 per pixel, 6 per loop iteration, or 7,200,000 calls per second for a 
             //   400*200 video at 30fps. Ouch.)
+            // byte_buffer.extend_from_slice(fg_ansi);
+            // byte_buffer.extend_from_slice(&[fg_r / 100 + b'0', (fg_r % 100) / 10 + b'0', fg_r % 10 + b'0']);
+            // byte_buffer.extend_from_slice(ansi_sep);
+            // byte_buffer.extend_from_slice(&[fg_g / 100 + b'0', (fg_g % 100) / 10 + b'0', fg_g % 10 + b'0']);
+            // byte_buffer.extend_from_slice(ansi_sep);
+            // byte_buffer.extend_from_slice(&[fg_b / 100 + b'0', (fg_b % 100) / 10 + b'0', fg_b % 10 + b'0']);
+            // byte_buffer.extend_from_slice(ansi_end);
+
+            // // Generate the background ANSI escape sequence
+            // byte_buffer.extend_from_slice(bg_ansi);
+            // byte_buffer.extend_from_slice(&[bg_r / 100 + b'0', (bg_r % 100) / 10 + b'0', bg_r % 10 + b'0']);
+            // byte_buffer.extend_from_slice(ansi_sep);
+            // byte_buffer.extend_from_slice(&[bg_g / 100 + b'0', (bg_g % 100) / 10 + b'0', bg_g % 10 + b'0']);
+            // byte_buffer.extend_from_slice(ansi_sep);
+            // byte_buffer.extend_from_slice(&[bg_b / 100 + b'0', (bg_b % 100) / 10 + b'0', bg_b % 10 + b'0']);
+            // byte_buffer.extend_from_slice(ansi_end);
             byte_buffer.extend_from_slice(fg_ansi);
-            byte_buffer.extend_from_slice(&[fg_r / 100 + b'0', (fg_r % 100) / 10 + b'0', fg_r % 10 + b'0']);
+            byte_buffer.extend_from_slice(&byte_map[fg_r as usize]);
             byte_buffer.extend_from_slice(ansi_sep);
-            byte_buffer.extend_from_slice(&[fg_g / 100 + b'0', (fg_g % 100) / 10 + b'0', fg_g % 10 + b'0']);
+            byte_buffer.extend_from_slice(&byte_map[fg_g as usize]);
             byte_buffer.extend_from_slice(ansi_sep);
-            byte_buffer.extend_from_slice(&[fg_b / 100 + b'0', (fg_b % 100) / 10 + b'0', fg_b % 10 + b'0']);
+            byte_buffer.extend_from_slice(&byte_map[fg_b as usize]);
             byte_buffer.extend_from_slice(ansi_end);
 
             // Generate the background ANSI escape sequence
             byte_buffer.extend_from_slice(bg_ansi);
-           byte_buffer.extend_from_slice(&[bg_r / 100 + b'0', (bg_r % 100) / 10 + b'0', bg_r % 10 + b'0']);
+            byte_buffer.extend_from_slice(&byte_map[bg_r as usize]);
             byte_buffer.extend_from_slice(ansi_sep);
-            byte_buffer.extend_from_slice(&[bg_g / 100 + b'0', (bg_g % 100) / 10 + b'0', bg_g % 10 + b'0']);
+            byte_buffer.extend_from_slice(&byte_map[bg_g as usize]);
             byte_buffer.extend_from_slice(ansi_sep);
-            byte_buffer.extend_from_slice(&[bg_b / 100 + b'0', (bg_b % 100) / 10 + b'0', bg_b % 10 + b'0']);
+            byte_buffer.extend_from_slice(&byte_map[bg_b as usize]);
             byte_buffer.extend_from_slice(ansi_end);
-
             // Append the block character
             byte_buffer.extend_from_slice(print_char);
         }
@@ -181,6 +196,8 @@ fn print_frame(byte_buffer: &Vec<u8>) {
 fn play_file(file_path: &str) {
     // Initialize ffmpeg
     initialize_ffmpeg();
+    // Generate the digit byte map
+    let digit_byte_map: [[u8; 3]; 256] = generate_digit_byte_map();
 
     // Open the video file to get the input context and the video stream index
     let mut ictx: ffmpeg_next::format::context::Input = open_file(file_path);
@@ -197,7 +214,7 @@ fn play_file(file_path: &str) {
     // Get the dimensions of the video
     let ffmpeg_h = decoder.height() as usize;
     let ffmpeg_w = decoder.width() as usize;
-    let mut ffmpeg_s: usize = (&ffmpeg_w + 4);
+    let ffmpeg_s: usize = &ffmpeg_w + 4;
 
     // Generate the framebuffers
     let (backbuffer, frontbuffer, mut delta_framebuffer) = generate_framebuffers(ffmpeg_h, ffmpeg_s);
@@ -206,7 +223,7 @@ fn play_file(file_path: &str) {
     // Create the byte buffer to store the final output
     let mut byte_buffer = generate_byte_buffer(ffmpeg_h, ffmpeg_w);
     let mut frame_index = 0;
-
+    let mut rgb_stride: usize;
     // Loop through the packets in the input context
     for (stream, packet) in ictx.packets() {
         // If the packet is a video packet, send it to the decoder
@@ -299,26 +316,26 @@ fn play_file(file_path: &str) {
                                 // rgb_pixel_data.len(),
                                 // (ffmpeg_h * ffmpeg_s) as isize - rgb_pixel_data.len() as isize
                         ));
-                        let frontbuffer_zero = vec![0 as u8; ffmpeg_h * ffmpeg_s * 3];
-                        let frontbuffer = ArrayView3::from_shape((ffmpeg_h, ffmpeg_s, 3), &frontbuffer_zero).expect("frontbuffer err");
+                        // let frontbuffer_zero = vec![0 as u8; ffmpeg_h * ffmpeg_s * 3];
+                        // let frontbuffer = ArrayView3::from_shape((ffmpeg_h, ffmpeg_s, 3), &frontbuffer_zero).expect("frontbuffer err");
 
                     // Print the RGB view to the terminal
                     // =========================
                     // WORKING IF YOU USE PRINT_RGB_ARRAY
                     // =========================
-                    // print_rgb_array(&backbuffer, &mut byte_buffer, true);
+                    print_rgb_array(&backbuffer, &mut byte_buffer, true, &digit_byte_map);
 
                     // =========================
                     // WORK IN PROGRESS - ONLY PRINTS SIZES SO FAR
                     // =========================
-                    generate_delta_frame(&frontbuffer, &backbuffer, &mut delta_framebuffer);
-                    rasterize_delta_frame(&delta_framebuffer, &mut byte_buffer);
+                    // generate_delta_frame(&frontbuffer, &backbuffer, &mut delta_framebuffer);
+                    // rasterize_delta_frame(&delta_framebuffer, &mut byte_buffer);
                 }
                 // Increment the frame index
                 frame_index += 1;
-                if frame_index == 2 {
-                    std::process::exit(0);
-                }
+                // if frame_index == 2 {
+                //     std::process::exit(0);
+                // }
 
             }
         }
@@ -405,6 +422,20 @@ fn get_video_to_rgb_context(decoder: &ffmpeg_next::codec::decoder::Video) -> ffm
 
 fn generate_ffmpeg_frame() -> ffmpeg::util::frame::Video {
     ffmpeg::util::frame::Video::empty()
+}
+
+fn generate_digit_byte_map() -> [[u8; 3]; 256] {
+    let mut byte_map = [[b'0'; 3]; 256];
+    let mut i = 0;
+    while i < 256 {
+        byte_map[i] = [
+            (i / 100) as u8 + b'0',
+            ((i % 100) / 10) as u8 + b'0',
+            (i % 10) as u8 + b'0'
+        ];
+        i += 1;
+    }
+    byte_map
 }
 fn main() {
 

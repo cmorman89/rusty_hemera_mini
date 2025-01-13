@@ -236,7 +236,10 @@ fn play_file(file_path: &str) {
                     // Convert the video frame to an RGB frame
                     rgb_conversion_context.run(&ffmpeg_frame, &mut rgb_frame).expect( "Failed to convert video frame to RGB");
                     // Create a view of the pixel data instead of copying it (ArrayView3 vs Array3)
-                    let backbuffer = ArrayView3::from_shape((ffmpeg_h, ffmpeg_s, 3), rgb_frame.data(0))
+                    // The stride *must* be taken from the RGB frame, not the ffmpeg frame
+                    // Divide by 3 because there are 3 channels per pixel (R, G, and B)
+                    rgb_stride = rgb_frame.stride(0) / 3;
+                    let backbuffer = ArrayView3::from_shape((ffmpeg_h, rgb_stride, 3), rgb_frame.data(0))
                         .expect(
                             &format!(
                                 "Failed to view pixel data.
